@@ -32,6 +32,8 @@ public class StripPanel extends JPanel {
 
     // ── Öffentliche API ────────────────────────────────────────────────────────
 
+    public PackResult getResult() { return result; }
+
     /** Statisch: alle Rechtecke sofort anzeigen, kein Animationsbereich. */
     public void setResult(PackResult result) {
         this.result    = result;

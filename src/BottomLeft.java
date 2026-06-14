@@ -3,27 +3,39 @@ import java.util.*;
 /**
  * Bottom-Left (BL)
  *
- * Sortiert Rechtecke nach Fläche absteigend. Für jedes Rechteck werden
- * Kandidatenpositionen aus den Ecken bereits platzierten Rechtecke gebildet
- * (x=0 + rechte Kanten; y=0 + obere Kanten). Die unterste (dann linkeste)
+ * Sortiert Rechtecke nach einem wählbaren Kriterium (Fläche, Breite oder Höhe,
+ * jeweils absteigend). Für jedes Rechteck werden Kandidatenpositionen aus den
+ * Ecken bereits platzierten Rechtecke gebildet. Die unterste (dann linkeste)
  * überschneidungsfreie Position wird gewählt.
  *
  * Liefert oft kompaktere Packungen als Regal-Verfahren, ist aber O(n³).
  */
 public class BottomLeft {
 
-    public static PackResult pack(List<Rect> input, int W) {
+    public enum Sort { AREA, WIDTH, HEIGHT }
+
+    public static PackResult pack(List<Rect> input, int W, Sort sort) {
         long t0 = System.currentTimeMillis();
 
         List<Rect> sorted = new ArrayList<>(input);
-        sorted.sort((a, b) -> Integer.compare(b.w * b.h, a.w * a.h));
+        switch (sort) {
+            case WIDTH:  sorted.sort((a, b) -> b.w - a.w); break;
+            case HEIGHT: sorted.sort((a, b) -> b.h - a.h); break;
+            default:     sorted.sort((a, b) -> Integer.compare(b.w * b.h, a.w * a.h)); break;
+        }
+
+        String name;
+        switch (sort) {
+            case WIDTH:  name = "BL (Breite↓)";  break;
+            case HEIGHT: name = "BL (Höhe↓)"; break;
+            default:     name = "BL (Fläche↓)"; break;
+        }
 
         List<Rect> placed = new ArrayList<>();
 
         for (Rect r : sorted) {
             if (r.w > W) continue;
 
-            // Kandidaten-Koordinaten aus Eckpunkten der platzierten Rechtecke
             TreeSet<Integer> xs = new TreeSet<>();
             TreeSet<Integer> ys = new TreeSet<>();
             xs.add(0);
@@ -35,19 +47,14 @@ public class BottomLeft {
 
             int bestX = 0, bestY = Integer.MAX_VALUE;
 
-            outer:
             for (int y : ys) {
-                if (y > bestY) break; // TreeSet ist sortiert → kein besseres y mehr möglich
+                if (y > bestY) break;
                 for (int x : xs) {
                     if (x + r.w > W) continue;
-
                     Rect cand = r.placed(x, y);
                     boolean ok = true;
                     for (Rect p : placed) {
-                        if (cand.overlaps(p)) {
-                            ok = false;
-                            break;
-                        }
+                        if (cand.overlaps(p)) { ok = false; break; }
                     }
                     if (ok && (y < bestY || (y == bestY && x < bestX))) {
                         bestY = y;
@@ -57,13 +64,12 @@ public class BottomLeft {
             }
 
             if (bestY == Integer.MAX_VALUE) {
-                // Fallback: ganz oben links ablegen
                 bestY = placed.stream().mapToInt(p -> p.y + p.h).max().orElse(0);
                 bestX = 0;
             }
             placed.add(r.placed(bestX, bestY));
         }
 
-        return new PackResult("Bottom-Left", placed, W, System.currentTimeMillis() - t0);
+        return new PackResult(name, placed, W, System.currentTimeMillis() - t0);
     }
 }

@@ -1,6 +1,7 @@
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
+import java.io.*;
 import java.util.*;
 import java.util.List;
 
@@ -12,18 +13,17 @@ public class MainFrame extends JFrame {
     private JSlider   sldSpeed;
 
     // ── Visualisierung ─────────────────────────────────────────────────────────
-    private StripPanel panNFDH, panFFDH, panBL;
+    private StripPanel panNFDH, panFFDH, panBL_A, panBL_W, panBL_H;
 
     // ── Statistik-Labels ───────────────────────────────────────────────────────
-    private JLabel lblStatNFDH, lblStatFFDH, lblStatBL;
+    private JLabel lblStatNFDH, lblStatFFDH, lblStatBL_A, lblStatBL_W, lblStatBL_H;
 
     // ── Animation ─────────────────────────────────────────────────────────────
     private javax.swing.Timer fastTimer;
-    private PackResult[] animResults;  // [NFDH, FFDH, BL]
-    private int   animStep;            // Index des aktuell fliegenden Rects
-    private float animProgress;        // 0.0 → 1.0 Einflugfortschritt
+    private PackResult[] animResults;
+    private int   animStep;
+    private float animProgress;
 
-    /** Schneller Rendering-Takt für flüssige Animation (~50 fps). */
     private static final int TICK_MS = 20;
 
     // ── Konstruktor ────────────────────────────────────────────────────────────
@@ -37,9 +37,9 @@ public class MainFrame extends JFrame {
         add(buildCenter(), BorderLayout.CENTER);
         add(buildStatus(), BorderLayout.SOUTH);
 
-        setPreferredSize(new Dimension(1250, 820));
+        setPreferredSize(new Dimension(1500, 900));
         pack();
-        setMinimumSize(new Dimension(900, 640));
+        setMinimumSize(new Dimension(1000, 680));
         setLocationRelativeTo(null);
     }
 
@@ -118,12 +118,16 @@ public class MainFrame extends JFrame {
         p.add(sep()); gap(p, 8);
         p.add(section("ERGEBNISSE"));
 
-        lblStatNFDH = statLbl();
-        lblStatFFDH = statLbl();
-        lblStatBL   = statLbl();
-        p.add(lblStatNFDH); gap(p, 6);
-        p.add(lblStatFFDH); gap(p, 6);
-        p.add(lblStatBL);
+        lblStatNFDH  = statLbl();
+        lblStatFFDH  = statLbl();
+        lblStatBL_A  = statLbl();
+        lblStatBL_W  = statLbl();
+        lblStatBL_H  = statLbl();
+        p.add(lblStatNFDH);  gap(p, 4);
+        p.add(lblStatFFDH);  gap(p, 8);
+        p.add(lblStatBL_A);  gap(p, 4);
+        p.add(lblStatBL_W);  gap(p, 4);
+        p.add(lblStatBL_H);
 
         p.add(Box.createVerticalGlue());
         return p;
@@ -132,23 +136,35 @@ public class MainFrame extends JFrame {
     // ── Visualisierungsbereich ─────────────────────────────────────────────────
 
     private JPanel buildCenter() {
-        JPanel p = new JPanel(new GridLayout(1, 3, 8, 0));
-        p.setBackground(new Color(228, 231, 242));
-        p.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-
+        // Obere Zeile: NFDH + FFDH
+        JPanel topRow = new JPanel(new GridLayout(1, 2, 8, 0));
+        topRow.setOpaque(false);
         panNFDH = new StripPanel("NFDH");
         panFFDH = new StripPanel("FFDH");
-        panBL   = new StripPanel("Bottom-Left");
+        topRow.add(card(panNFDH));
+        topRow.add(card(panFFDH));
 
-        p.add(card(panNFDH));
-        p.add(card(panFFDH));
-        p.add(card(panBL));
-        return p;
+        // Untere Zeile: drei BL-Varianten
+        JPanel botRow = new JPanel(new GridLayout(1, 3, 8, 0));
+        botRow.setOpaque(false);
+        panBL_A = new StripPanel("BL (Fläche↓)");
+        panBL_W = new StripPanel("BL (Breite↓)");
+        panBL_H = new StripPanel("BL (Höhe↓)");
+        botRow.add(card(panBL_A));
+        botRow.add(card(panBL_W));
+        botRow.add(card(panBL_H));
+
+        JPanel center = new JPanel(new GridLayout(2, 1, 0, 8));
+        center.setBackground(new Color(228, 231, 242));
+        center.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        center.add(topRow);
+        center.add(botRow);
+        return center;
     }
 
     private JLabel buildStatus() {
         JLabel bar = new JLabel(
-            "  Strip Packing Simulator  |  Rechtecke fallen per Animation von oben ein  |  Vorschau zeigt das nächste Stück");
+            "  Strip Packing Simulator  |  Oben: NFDH / FFDH   Unten: Bottom-Left in 3 Sortiervarianten  |  CSV-Export je Panel");
         bar.setFont(new Font("SansSerif", Font.PLAIN, 11));
         bar.setForeground(new Color(80, 85, 110));
         bar.setOpaque(true);
@@ -189,54 +205,60 @@ public class MainFrame extends JFrame {
         List<Rect> rects = generateRects();
         int W = (int) spWidth.getValue();
 
-        PackResult rNFDH = NFDH.pack(rects, W);
-        PackResult rFFDH = FFDH.pack(rects, W);
-        PackResult rBL   = BottomLeft.pack(rects, W);
+        PackResult rNFDH  = NFDH.pack(rects, W);
+        PackResult rFFDH  = FFDH.pack(rects, W);
+        PackResult rBL_A  = BottomLeft.pack(rects, W, BottomLeft.Sort.AREA);
+        PackResult rBL_W  = BottomLeft.pack(rects, W, BottomLeft.Sort.WIDTH);
+        PackResult rBL_H  = BottomLeft.pack(rects, W, BottomLeft.Sort.HEIGHT);
 
-        updateStats(rNFDH, rFFDH, rBL);
+        updateStats(rNFDH, rFFDH, rBL_A, rBL_W, rBL_H);
 
         if (!animate) {
             panNFDH.setResult(rNFDH);
             panFFDH.setResult(rFFDH);
-            panBL  .setResult(rBL);
+            panBL_A.setResult(rBL_A);
+            panBL_W.setResult(rBL_W);
+            panBL_H.setResult(rBL_H);
             return;
         }
 
         // ── Animationsmodus ────────────────────────────────────────────────────
-        animResults  = new PackResult[]{ rNFDH, rFFDH, rBL };
-        StripPanel[] panels = { panNFDH, panFFDH, panBL };
+        animResults = new PackResult[]{ rNFDH, rFFDH, rBL_A, rBL_W, rBL_H };
+        StripPanel[] panels = { panNFDH, panFFDH, panBL_A, panBL_W, panBL_H };
         animStep     = 0;
         animProgress = 0f;
 
-        int maxN = maxRects(rNFDH, rFFDH, rBL);
-
-        // Alle Panels auf Schritt 0 (noch leer, erstes Rect fliegt gleich ein)
-        for (int i = 0; i < 3; i++)
-            panels[i].setAnimState(animResults[i], 0, 0f);
+        int maxN = maxRects(animResults);
+        for (StripPanel panel : panels)
+            panel.setAnimState(animResults[indexOf(panels, panel)], 0, 0f);
 
         fastTimer = new javax.swing.Timer(TICK_MS, e -> {
             float stepMs = sldSpeed.getValue();
             animProgress += TICK_MS / stepMs;
 
             if (animProgress >= 1f) {
-                // Dieser Schritt ist fertig → nächstes Rect
                 animProgress = 0f;
                 animStep++;
-
                 if (animStep >= maxN) {
-                    // Alle Rects platziert
                     stopAnimation();
-                    for (int i = 0; i < 3; i++)
-                        panels[i].setResult(animResults[i]);
+                    panNFDH.setResult(rNFDH);
+                    panFFDH.setResult(rFFDH);
+                    panBL_A.setResult(rBL_A);
+                    panBL_W.setResult(rBL_W);
+                    panBL_H.setResult(rBL_H);
                     return;
                 }
             }
 
-            // Alle drei Panels synchron aktualisieren
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < panels.length; i++)
                 panels[i].setAnimState(animResults[i], animStep, animProgress);
         });
         fastTimer.start();
+    }
+
+    private static int indexOf(StripPanel[] arr, StripPanel p) {
+        for (int i = 0; i < arr.length; i++) if (arr[i] == p) return i;
+        return 0;
     }
 
     private void stopAnimation() {
@@ -252,19 +274,50 @@ public class MainFrame extends JFrame {
         return m;
     }
 
-    private void updateStats(PackResult a, PackResult b, PackResult c) {
-        lblStatNFDH.setText(statText(a));
-        lblStatFFDH.setText(statText(b));
-        lblStatBL  .setText(statText(c));
+    private void updateStats(PackResult nfdh, PackResult ffdh,
+                             PackResult blA, PackResult blW, PackResult blH) {
+        lblStatNFDH.setText(statText(nfdh));
+        lblStatFFDH.setText(statText(ffdh));
+        lblStatBL_A.setText(statText(blA));
+        lblStatBL_W.setText(statText(blW));
+        lblStatBL_H.setText(statText(blH));
     }
 
     private String statText(PackResult r) {
         return String.format(
             "<html><b style='color:#1a4080'>%s</b><br>"
-            + "Höhe: <b>%d</b> &nbsp;|&nbsp; Eff: <b>%.1f%%</b><br>"
-            + "Rects: %d &nbsp; Zeit: %dms</html>",
-            r.algorithmName, r.totalHeight, r.efficiency,
-            r.rects.size(), r.timeMs);
+            + "Höhe: <b>%d</b> &nbsp;|&nbsp; Eff: <b>%.1f%%</b> &nbsp; %dms</html>",
+            r.algorithmName, r.totalHeight, r.efficiency, r.timeMs);
+    }
+
+    // ── CSV-Export ────────────────────────────────────────────────────────────
+
+    private void exportCsv(StripPanel panel) {
+        PackResult r = panel.getResult();
+        if (r == null) {
+            JOptionPane.showMessageDialog(this,
+                "Noch keine Daten vorhanden. Bitte zuerst packen.",
+                "Kein Ergebnis", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String safeName = r.algorithmName.replaceAll("[^a-zA-Z0-9_]", "_");
+        JFileChooser fc = new JFileChooser();
+        fc.setSelectedFile(new File(safeName + ".csv"));
+        fc.setDialogTitle("CSV exportieren – " + r.algorithmName);
+
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(
+                new FileOutputStream(fc.getSelectedFile()), "UTF-8"))) {
+            pw.println("id,w,h");
+            for (Rect rect : r.rects)
+                pw.printf("%d,%d,%d%n", rect.id, rect.w, rect.h);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                "Fehler beim Speichern:\n" + ex.getMessage(),
+                "Fehler", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     // ── UI-Hilfsmethoden ──────────────────────────────────────────────────────
@@ -334,10 +387,27 @@ public class MainFrame extends JFrame {
     }
 
     private JPanel card(StripPanel sp) {
+        JButton csvBtn = new JButton("⬇ CSV");
+        csvBtn.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        csvBtn.setFocusPainted(false);
+        csvBtn.setBackground(new Color(230, 235, 250));
+        csvBtn.setForeground(new Color(40, 55, 110));
+        csvBtn.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(170, 180, 220), 1),
+            BorderFactory.createEmptyBorder(2, 8, 2, 8)));
+        csvBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        csvBtn.addActionListener(e -> exportCsv(sp));
+
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
+        footer.setBackground(new Color(240, 242, 250));
+        footer.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(190, 195, 215)));
+        footer.add(csvBtn);
+
         JPanel c = new JPanel(new BorderLayout());
         c.setBackground(Color.WHITE);
         c.setBorder(BorderFactory.createLineBorder(new Color(175, 180, 205), 1));
         c.add(sp, BorderLayout.CENTER);
+        c.add(footer, BorderLayout.SOUTH);
         return c;
     }
 }
